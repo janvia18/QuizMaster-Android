@@ -5,8 +5,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +24,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.quizmaster.data.QuizRepository
+import com.example.quizmaster.data.model.LeaderboardEntry
 import com.example.quizmaster.ui.quiz.QuizUiState
 import com.example.quizmaster.ui.quiz.QuizViewModel
 import com.example.quizmaster.ui.theme.CorrectGreen
@@ -28,12 +32,19 @@ import com.example.quizmaster.ui.theme.IncorrectRed
 import com.example.quizmaster.ui.theme.NeutralGray
 import com.example.quizmaster.ui.theme.QuizMasterTheme
 
+enum class AppScreen {
+    Welcome,
+    Quiz,
+    Leaderboard,
+    Answers
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             QuizMasterTheme {
-                // This is a simple ViewModelFactory to pass the Repository
+                // ViewModel factory so we can pass the repository
                 val viewModelFactory = object : ViewModelProvider.Factory {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
                         if (modelClass.isAssignableFrom(QuizViewModel::class.java)) {
@@ -44,43 +55,150 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val viewModel: QuizViewModel = viewModel(factory = viewModelFactory)
-                QuizScreen(viewModel = viewModel)
+                val quizViewModel: QuizViewModel = viewModel(factory = viewModelFactory)
+
+                // Simple navigation state
+                var currentScreen by remember { mutableStateOf(AppScreen.Welcome) }
+
+                when (currentScreen) {
+                    AppScreen.Welcome -> {
+                        WelcomeScreen(
+                            onStartQuiz = { currentScreen = AppScreen.Quiz },
+                            onViewLeaderboard = { currentScreen = AppScreen.Leaderboard }
+                        )
+                    }
+                    AppScreen.Quiz -> {
+                        QuizScreen(
+                            viewModel = quizViewModel,
+                            onViewLeaderboard = { currentScreen = AppScreen.Leaderboard },
+                            onShowAnswers = { currentScreen = AppScreen.Answers }
+                        )
+                    }
+                    AppScreen.Leaderboard -> {
+                        LeaderboardScreen(
+                            onBack = { currentScreen = AppScreen.Welcome }
+                        )
+                    }
+                    AppScreen.Answers -> {
+                        AnswerKeyScreen(
+                            viewModel = quizViewModel,
+                            onBack = { currentScreen = AppScreen.Quiz } // goes back to result screen
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-// --- The Main Screen Composable (CORRECTED) ---
-@Composable
-fun QuizScreen(viewModel: QuizViewModel) {
-    val uiState by viewModel.uiState.collectAsState()
+// ---------------------- WELCOME SCREEN ----------------------
 
-    // Use Surface to set the background color for the entire app
+@Composable
+fun WelcomeScreen(
+    onStartQuiz: () -> Unit,
+    onViewLeaderboard: () -> Unit
+) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background // Our new AppBackground color
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "QuizMaster",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Welcome! Test your knowledge and see how you rank on the leaderboard.",
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Button(
+                onClick = onStartQuiz,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Start Quiz", fontSize = 16.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = onViewLeaderboard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.EmojiEvents,
+                    contentDescription = "Leaderboard"
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("View Leaderboard", fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+// ---------------------- QUIZ SCREEN ----------------------
+
+@Composable
+fun QuizScreen(
+    viewModel: QuizViewModel,
+    onViewLeaderboard: () -> Unit,
+    onShowAnswers: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
         when {
             uiState.isLoading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
                     CircularProgressIndicator()
                 }
             }
-            // --- THIS BLOCK IS NOW CORRECT ---
+
             uiState.isQuizFinished -> {
                 QuizFinishedScreen(
                     score = uiState.score,
                     totalQuestions = uiState.questions.size,
-                    isScoreSubmitted = uiState.isScoreSubmitted, // <-- Pass the state
+                    isScoreSubmitted = uiState.isScoreSubmitted,
                     onSubmit = { username ->
                         viewModel.submitFinalScore(username)
                     },
-                    onPlayAgain = { // <-- Pass the function
+                    onPlayAgain = {
                         viewModel.playAgain()
+                    },
+                    onViewLeaderboard = {
+                        onViewLeaderboard()
+                    },
+                    onShowAnswers = {
+                        onShowAnswers()
                     }
                 )
             }
+
             uiState.currentQuestion != null -> {
                 QuizContent(
                     uiState = uiState,
@@ -89,26 +207,36 @@ fun QuizScreen(viewModel: QuizViewModel) {
                     }
                 )
             }
+
             uiState.error != null -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Error: ${uiState.error}",
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
     }
 }
 
-// --- Composable for the Active Quiz (Unchanged) ---
+// --- Composable for the Active Quiz ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuizContent(uiState: QuizUiState, onAnswerSelected: (Int) -> Unit) {
+fun QuizContent(
+    uiState: QuizUiState,
+    onAnswerSelected: (Int) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // --- Header: Timer & Score ---
+        // Header: score + timer
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -125,18 +253,23 @@ fun QuizContent(uiState: QuizUiState, onAnswerSelected: (Int) -> Unit) {
                 text = "Time: ${uiState.timeLeftSeconds}",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (uiState.timeLeftSeconds <= 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                color = if (uiState.timeLeftSeconds <= 5)
+                    MaterialTheme.colorScheme.error
+                else
+                    MaterialTheme.colorScheme.primary
             )
         }
 
-        // --- Question Card ---
+        // Question Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f), // Makes the card take up available space
+                .weight(1f),
             shape = RoundedCornerShape(16.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         ) {
             Box(
                 modifier = Modifier
@@ -154,18 +287,29 @@ fun QuizContent(uiState: QuizUiState, onAnswerSelected: (Int) -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // --- Answer Options ---
+        val hasAnswered = uiState.selectedAnswerIndex != null
+
+        // Answer options
         uiState.currentQuestion?.options?.forEachIndexed { index, optionText ->
             val isSelected = uiState.selectedAnswerIndex == index
-            val hasAnswered = uiState.selectedAnswerIndex != null
             val correctIndex = uiState.currentQuestion.correctOptionIndex
 
-            val buttonColor = when {
-                !hasAnswered -> ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                isSelected && index == correctIndex -> ButtonDefaults.buttonColors(containerColor = CorrectGreen)
-                isSelected && index != correctIndex -> ButtonDefaults.buttonColors(containerColor = IncorrectRed)
-                index == correctIndex -> ButtonDefaults.buttonColors(containerColor = CorrectGreen)
-                else -> ButtonDefaults.buttonColors(containerColor = NeutralGray)
+            val buttonColors = when {
+                !hasAnswered -> ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+                isSelected && index == correctIndex -> ButtonDefaults.buttonColors(
+                    containerColor = CorrectGreen
+                )
+                isSelected && index != correctIndex -> ButtonDefaults.buttonColors(
+                    containerColor = IncorrectRed
+                )
+                index == correctIndex -> ButtonDefaults.buttonColors(
+                    containerColor = CorrectGreen
+                )
+                else -> ButtonDefaults.buttonColors(
+                    containerColor = NeutralGray
+                )
             }
 
             Button(
@@ -174,7 +318,7 @@ fun QuizContent(uiState: QuizUiState, onAnswerSelected: (Int) -> Unit) {
                     .fillMaxWidth()
                     .padding(vertical = 6.dp)
                     .height(56.dp),
-                colors = buttonColor,
+                colors = buttonColors,
                 enabled = !hasAnswered,
                 shape = RoundedCornerShape(12.dp),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
@@ -185,16 +329,18 @@ fun QuizContent(uiState: QuizUiState, onAnswerSelected: (Int) -> Unit) {
     }
 }
 
+// ---------------------- QUIZ FINISHED / THANK YOU ----------------------
 
-// --- Composable for the Finished Screen (CORRECTED) ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuizFinishedScreen(
     score: Int,
     totalQuestions: Int,
-    isScoreSubmitted: Boolean, // <-- Correct parameter
+    isScoreSubmitted: Boolean,
     onSubmit: (String) -> Unit,
-    onPlayAgain: () -> Unit    // <-- Correct parameter
+    onPlayAgain: () -> Unit,
+    onViewLeaderboard: () -> Unit,
+    onShowAnswers: () -> Unit
 ) {
     var username by remember { mutableStateOf("") }
 
@@ -205,14 +351,16 @@ fun QuizFinishedScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // --- Score Card (Always shows) ---
+        // Score card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 32.dp),
             shape = RoundedCornerShape(16.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         ) {
             Column(
                 modifier = Modifier
@@ -242,9 +390,8 @@ fun QuizFinishedScreen(
             }
         }
 
-        // --- This is the logic you were missing ---
         if (!isScoreSubmitted) {
-            // --- STATE 1: Show the Submit Form ---
+            // STATE 1: Show submit form
             Text(
                 "Enter your name for the leaderboard:",
                 style = MaterialTheme.typography.titleMedium
@@ -271,23 +418,272 @@ fun QuizFinishedScreen(
                 Text("Submit to Leaderboard", fontSize = 16.sp)
             }
         } else {
-            // --- STATE 2: Show "Done!" and "Play Again" ---
+            // STATE 2: Thank you + actions
             Text(
-                "Score Submitted!",
+                "Thank you! Your score has been submitted.",
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                "You can view the leaderboard to see how you rank.",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
-                onClick = onPlayAgain, // Call the new function
+                onClick = onShowAnswers,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Show Answers", fontSize = 16.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onViewLeaderboard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.EmojiEvents,
+                    contentDescription = "Leaderboard"
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("View Leaderboard", fontSize = 16.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = onPlayAgain,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Play Again", fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+// ---------------------- ANSWER KEY SCREEN ----------------------
+
+@Composable
+fun AnswerKeyScreen(
+    viewModel: QuizViewModel,
+    onBack: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // Top bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back"
+                    )
+                }
+                Text(
+                    text = "Answer Key",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (uiState.questions.isEmpty()) {
+                Text("No questions to show.")
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    itemsIndexed(uiState.questions) { index, question ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                Text(
+                                    text = "Q${index + 1}. ${question.text}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                val correctOption =
+                                    question.options.getOrNull(question.correctOptionIndex)
+
+                                Text(
+                                    text = "Correct answer:",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Text(
+                                    text = correctOption ?: "N/A",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = CorrectGreen
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------- LEADERBOARD SCREEN ----------------------
+
+@Composable
+fun LeaderboardScreen(onBack: () -> Unit) {
+    val repository = remember { QuizRepository() }
+
+    var entries by remember { mutableStateOf<List<LeaderboardEntry>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            isLoading = true
+            error = null
+            entries = repository.getGlobalLeaderboard()
+        } catch (e: Exception) {
+            error = e.message ?: "Failed to load leaderboard"
+        } finally {
+            isLoading = false
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // Top bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back"
+                    )
+                }
+                Text(
+                    text = "Leaderboard",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            when {
+                isLoading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+
+                error != null -> {
+                    Text(
+                        text = "Error: $error",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                entries.isEmpty() -> {
+                    Text("No scores yet. Be the first to play!")
+                }
+
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        itemsIndexed(entries) { index, entry ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "#${index + 1}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = entry.username.ifBlank { "Anonymous" },
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(
+                                            text = "Score: ${entry.score}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
